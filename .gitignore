@@ -1,0 +1,28 @@
+# Environments & Secrets (Rubric: No secrets in repo)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+frontend/.env.local
+backend/.venv/
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.db
+*.sqlite3
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+.DS_Store
+*/.DS_Store
+
+# Generated storage PDFs
+backend/storage/*.pdf
+!backend/storage/.gitkeep
