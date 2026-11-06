@@ -133,3 +133,29 @@ cd backend
 .venv/bin/pytest tests/test_core.py -v
 ```
 All 10 tests run in under 4 seconds, verifying the rule engine, login security, submission gatekeeper, AI quarantine tray, RBAC waivers, TPA queries, PDF packet generation, and DPDP unmask logging.
+
+---
+
+## 7. Cloud Deployment (Render & Vercel)
+
+### Backend Deployment (Render.com)
+1. In Render Dashboard, click **New +** ➔ **Web Service** ➔ Select GitHub repo `Prakhar6947/ClaimGuard`.
+2. Configure settings:
+   - **Root Directory:** `backend`
+   - **Environment:** `Python 3`
+   - **Build Command:** `pip install -r requirements.txt && python -m app.seed`
+   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. Environment Variables:
+   - `JWT_SECRET_KEY`: `<generate-random-secret>`
+   - `GEMINI_API_KEY`: *(Optional, deterministic fallback works out of the box)*
+   - `CORS_ALLOWED_ORIGINS`: `*`
+4. Deploy and copy your live service URL (e.g., `https://claimguard-api.onrender.com`).
+
+### Frontend Deployment (Vercel)
+1. In Vercel Dashboard, click **Add New Project** ➔ Import `Prakhar6947/ClaimGuard`.
+2. Configure settings:
+   - **Root Directory:** `frontend`
+   - **Framework Preset:** `Next.js`
+3. Environment Variables:
+   - `NEXT_PUBLIC_API_BASE_URL`: `https://claimguard-api.onrender.com` (your live backend URL)
+4. Click **Deploy**. The Next.js frontend builds in ~60 seconds.
