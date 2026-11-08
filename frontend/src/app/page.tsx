@@ -1,5 +1,8 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Search,
@@ -113,11 +116,13 @@ export default function CashlessWorkspaceApp() {
     setError(null);
     try {
       const data = await fetchClaims(statusFilter, searchQuery);
-      setClaims(data.claims);
-      setKpis(data.kpis);
+      setClaims(data?.claims || []);
+      setKpis(data?.kpis || null);
     } catch {
+      setClaims([]);
+      setKpis(null);
       setError(
-        "Backend API unreachable at http://localhost:8000. Ensure FastAPI is running (`uvicorn app.main:app --port 8000`)."
+        "Backend API unreachable. Ensure the FastAPI backend is running and NEXT_PUBLIC_API_BASE_URL is configured."
       );
     } finally {
       setLoading(false);

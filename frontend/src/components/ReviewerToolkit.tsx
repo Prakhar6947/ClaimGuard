@@ -36,6 +36,11 @@ export function ReviewerToolkit({
   onSimulateQuery,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const isEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_TOOLKIT !== "false";
+
+  if (!isEnabled) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-40">

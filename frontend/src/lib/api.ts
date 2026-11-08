@@ -1,7 +1,17 @@
 import { Claim, DashboardKPIs, AuditLogItem, Role, CreateClaimPayload, AuthUser } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+export function getApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!envUrl || typeof envUrl !== "string" || !envUrl.trim()) {
+    if (typeof window !== "undefined" && window.location.protocol === "https:") {
+      return "";
+    }
+    return "http://localhost:8000";
+  }
+  return envUrl.trim().replace(/\/+$/, "");
+}
+
+export const API_BASE = getApiBase();
 
 export async function fetchClaims(
   status?: string,
@@ -11,10 +21,11 @@ export async function fetchClaims(
   if (status && status !== "ALL") params.set("status", status);
   if (search) params.set("search", search);
 
-  const res = await fetch(`${API_BASE}/api/v1/claims?${params.toString()}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}/api/v1/claims?${params.toString()}`, {
     cache: "no-store",
   });
-  if (!res.ok) throw new Error("Failed to fetch claims from backend");
+  if (!res.ok) throw new Error(`Failed to fetch claims (HTTP ${res.status})`);
   return res.json();
 }
 
