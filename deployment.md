@@ -1,161 +1,147 @@
-# ClaimGuard TPA — Deployment & Operations Guide
-**GitHub Repository:** [https://github.com/Prakhar6947/ClaimGuard](https://github.com/Prakhar6947/ClaimGuard)  
-**CI/CD Pipeline:** [![ClaimGuard CI](https://github.com/Prakhar6947/ClaimGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/Prakhar6947/ClaimGuard/actions)  
+# ClaimGuard — Deployment and Reviewer Guide
 
-## Overview
-**ClaimGuard** is a prototype Cashless Claims & TPA Workspace for demonstrating hospital-to-insurer claim workflows. It includes configurable SLA timers, an Insurer × Procedure 3-tier checklist gatekeeper, and human review of optional multimodal AI document processing. It is not a certified compliance or production system.
+- **GitHub repository:** https://github.com/Prakhar6947/ClaimGuard
 
 ---
 
-## 1. Quickstart (Zero-Config Local Execution)
+## 1. Demo login details
+
+On the sign-in screen you can click a demo persona card, or type the credentials below.
+All data is synthetic.
+
+| Role | Email | Password | What to test |
+| :--- | :--- | :--- | :--- |
+| Insurance Desk Executive (`DESK_EXEC`) | `demo.exec@example.invalid` or `exec@companya-hospital.in` | `ClaimGuard@2026` | Browse claims, create an admission, upload documents, drag documents into slots, confirm or edit AI fields, reply to TPA queries, export the merged PDF packet |
+| Insurance Desk Head (`DESK_HEAD`) | `demo.head@example.invalid` or `head@companya-hospital.in` | `ClaimGuard@2026` | Edit checklist rules, waive a slot with a reason, view analytics and the audit log |
+| Treating Doctor (`DOCTOR`) | `demo.doctor@example.invalid` or `doctor@companya-hospital.in` | `ClaimGuard@2026` | Open the mobile sign-off screen for queries on CLM-3381 and CLM-3385 |
+
+### Reviewer Demo Toolkit
+
+Open the floating **Reviewer Demo Toolkit** (bottom right) or press `Ctrl+K` / `Cmd+K` to:
+
+1. Switch role without logging out.
+2. Download or inject the sample PDFs:
+   - `CLM3381_Abdominal_Ultrasound_USG_Report.pdf` — high confidence, fills the missing ultrasound slot on CLM-3381
+   - `CLM3385_Dengue_Serial_Platelet_Lab_Report.pdf` — high confidence, fills the platelet slot on CLM-3385
+   - `Handwritten_Doctor_Admission_ICP_Scan.pdf` — handwritten note extraction
+   - `Blurry_Low_Confidence_Ward_Scan.pdf` — low confidence (54%, below the 75% threshold), lands in the manual tray so you can drag it to a slot
+3. Simulate an inbound TPA query email on CLM-3382 and watch the AI summarise it and flag the slot.
+
+### Suggested 5-minute walkthrough
+
+1. Sign in as Executive and create a synthetic admission using **New Admission**.
+2. Open CLM-3381, try to move it to *Preauth Sent* and see the 422 gap list.
+3. Inject the ultrasound PDF, confirm the extracted fields, and submit again.
+4. Upload the blurry scan, see it quarantined, drag it to a slot.
+5. Compile the PDF packet.
+6. Sign in as Head, waive a slot (reason required), and check the audit log.
+7. Fire the TPA query webhook, then open the doctor mobile view.
+
+---
+
+## 2. Run locally
 
 ### Prerequisites
-- Python 3.11+ / Python 3.13+
-- Node.js 18+ / 20+
-- (Optional) Docker & Docker Compose
 
-### Backend (FastAPI + SQLite Fallback)
+- Python 3.11+
+- Node.js 20+ and npm 10+
+- Docker and Docker Compose (optional, only for the PostgreSQL option)
+
+### Option A — SQLite, no database setup
+
+```bash
+git clone https://github.com/Prakhar6947/ClaimGuard.git
+cd ClaimGuard
+```
+
+**Terminal 1 — backend**
+
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env
 
-# Run automated tests (10 passing tests)
-pytest tests/test_core.py -v
+# Export values from .env for this terminal (optional for SQLite defaults;
+# required when using a custom DATABASE_URL, JWT_SECRET_KEY, or Gemini key).
+set -a
+source .env
+set +a
 
-# Seed database with sample claims (CLM-3381, CLM-3382, CLM-3385) & sample medical PDFs
-python -m app.seed
-
-# Start backend server
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m app.seed               # creates sample claims, rules, users and PDFs
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Backend API will be live at `http://localhost:8000`. Interactive Swagger UI documentation is available at `http://localhost:8000/docs`.
 
-### Frontend (Next.js 15 + Tailwind CSS)
+**Terminal 2 — frontend**
+
 ```bash
 cd frontend
 npm install
-npm run build
-npm start
+cp .env.example .env.local
+npm run dev
 ```
-Open `http://localhost:3000` in your browser.
 
----
+Open http://localhost:3000. API docs are at http://localhost:8000/docs.
 
-## 2. Default Sign-In Credentials
-
-ClaimGuard includes a clinical Sign-In interface with both manual JWT credential authentication and **1-Click Instant Demo Login pills** for fast reviewer evaluation:
-
-| Role | Hospital Staff Email (Canonical) | Demo Alias | Password | Permissions & Workflow Scope |
-|---|---|---|---|---|
-| **Desk Executive** | `exec@companya-hospital.in` | `demo.exec@example.invalid` | `ClaimGuard@2026` | Claims queue triage, document uploads, AI field confirmations, query replies, merged PDF compilation. |
-| **Desk Head (Admin)** | `head@companya-hospital.in` | `demo.head@example.invalid` | `ClaimGuard@2026` | All executive capabilities + checklist waiver approvals, 3-tier rule matrix configuration, audit trail inspection. |
-| **Treating Doctor** | `doctor@companya-hospital.in` | `demo.doctor@example.invalid` | `ClaimGuard@2026` | 360px mobile ward round interface, clinical justification sign-offs for TPA queries. |
-
----
-
-## 3. Core API Endpoints
-
-### Authentication & RBAC
-- `POST /api/v1/auth/login`: Authenticate staff credentials, return JWT bearer token and user role.
-
-### Claims Management & Gatekeeper
-- `GET /api/v1/claims`: List all active claims with IRDAI SLA timers, gap counts, and status filters.
-- `POST /api/v1/claims`: Register new cashless admission; automatically masks policy number and triggers 3-tier checklist rule engine to materialize mandatory slots.
-- `GET /api/v1/claims/{claim_id}`: Fetch full claim details, checklist items, AI fields, and documents.
-- `POST /api/v1/claims/{claim_id}/transition`: Gatekeeper-enforced state transitions (`DRAFT` -> `PREAUTH_READY` -> `PREAUTH_SENT` -> `ENHANCEMENT_REQUESTED` -> `APPROVED` -> `DISCHARGE_SENT` -> `SETTLED`). Rejects transition if mandatory checklist slots or unconfirmed AI fields remain.
-- `POST /api/v1/claims/{claim_id}/audit-unmask`: Logs immutable DPDP audit record (`DPDP_PII_POLICY_UNMASKED`) when staff reveals masked policy numbers.
-
-### Document & AI Vision Pipeline
-- `POST /api/v1/claims/{claim_id}/documents/upload`: Upload medical scan; auto-classified by Gemini 2.5 Flash / deterministic fallback. Scans with confidence < 75% are routed to the Quarantine Tray.
-- `GET /api/v1/claims/{claim_id}/documents/{doc_id}/file`: Stream raw uploaded document for split-screen PDF preview.
-- `GET /api/v1/sample-docs/{file_name}`: Serve sample medical scans (e.g. USG, ICP, lab reports).
-- `POST /api/v1/claims/{claim_id}/documents/{doc_id}/reassign`: Human-in-the-loop manual slot assignment from quarantine tray.
-- `POST /api/v1/claims/{claim_id}/fields/{field_id}/confirm`: Confirm or edit AI pre-filled data with human verification.
-
-### Checklist Rule Engine & Desk Head Waivers
-- `GET /api/v1/rules`: Retrieve active 3-tier checklist rules matrix by insurer and procedure.
-- `POST /api/v1/rules`: Create or edit insurer x procedure checklist rules (Desk Head role only).
-- `POST /api/v1/claims/{claim_id}/checklist/{item_id}/waive`: Desk Head-authorized waiver of mandatory checklist slot with mandatory clinical reason.
-
-### TPA Queries & Mobile Doctor Magic Link
-- `GET /api/v1/claims/{claim_id}/queries`: List queries with SLA countdown timer.
-- `POST /api/v1/claims/{claim_id}/queries`: Simulate inbound webhook query from TPA.
-- `POST /api/v1/claims/{claim_id}/queries/{query_id}/reply`: Send response to TPA query.
-- `POST /api/v1/claims/{claim_id}/doctor-signoff`: Mobile one-click clinical justification sign-off by treating doctor.
-
-### Merged PDF Packet & Audit
-- `GET /api/v1/claims/{claim_id}/packet.pdf`: Generate single merged ReportLab PDF packet with title page, summary, checklist status, and attached documents.
-- `GET /api/v1/audit-logs`: Audit log inspection for DPDP compliance.
-
----
-
-## 4. Docker Deployment
-
-To spin up the complete stack with PostgreSQL, FastAPI backend, and Next.js frontend:
+### Option B — Docker Compose (PostgreSQL 16 + API + web)
 
 ```bash
 docker compose up --build
 ```
 
-### Services Started:
-- **Database**: PostgreSQL 16 Alpine (`localhost:5432`)
-- **Backend**: FastAPI with Python 3.11 (`localhost:8000`)
-- **Frontend**: Next.js 15 (`localhost:3000`)
+- App: http://localhost:3000
+- API docs: http://localhost:8000/docs
+
+### Run the tests
+
+```bash
+cd backend && source .venv/bin/activate && pytest -v
+cd ../frontend && npm run build
+```
+
+The pytest suite has 10 tests covering the rule engine, the 422 gatekeeper, AI quarantine, RBAC 403, the PDF merge and the DPDP audit record. The same checks run in GitHub Actions on every push.
+
+### AI mode
+
+- With `GEMINI_API_KEY` set, the backend calls the Gemini model.
+- Without it, a deterministic analyzer runs, so every demo case works offline.
 
 ---
 
-## 5. Environment Variables
+## 3. How it is deployed
+
+The project is **not deployed**; it is submitted as a public GitHub repository that runs locally.
+
+The architecture is deployable as-is. A suggested layout (untested, so treated as a next step):
+
+- Frontend (Next.js): any Node host or Vercel, root directory `frontend`.
+- Backend (FastAPI): a container or web service, root directory `backend`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check at `/api/v1/health`.
+- Database: managed PostgreSQL in an Indian region, set through `DATABASE_URL`.
+- CI: `.github/workflows/ci.yml` seeds the database, runs pytest and builds the frontend.
+
+---
+
+## 4. Environment variables (names only)
 
 ### Backend (`backend/.env`)
-| Variable | Description | Default |
-|---|---|---|
-| `DATABASE_URL` | SQLite / PostgreSQL connection string | `sqlite:///./claimguard.db` |
-| `JWT_SECRET_KEY` | Secret key for JWT HS256 tokens | `dev-hospital-nashik-secret-key-2026` |
-| `AI_CONFIDENCE_THRESHOLD` | Threshold below which scans are quarantined | `0.75` |
-| `GEMINI_API_KEY` | Optional Google Gemini 2.5 Flash API key | `""` (Deterministic fallback active) |
-| `GEMINI_MODEL_NAME` | Model identifier | `gemini-2.5-flash` |
-| `CORS_ALLOWED_ORIGINS` | Allowed origins | `http://localhost:3000,http://127.0.0.1:3000` |
+
+| Name | Required | Purpose |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | Yes | SQLite path for local use or a PostgreSQL URI |
+| `JWT_SECRET_KEY` | Yes | Secret used to sign session tokens |
+| `JWT_ALGORITHM` | Yes | Token signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Yes | Session lifetime |
+| `AI_CONFIDENCE_THRESHOLD` | Yes | Minimum confidence to auto-slot a document |
+| `GEMINI_API_KEY` | Optional | Enables live AI; offline analyzer is used if unset |
+| `GEMINI_MODEL_NAME` | Yes | Model identifier |
+| `CORS_ALLOWED_ORIGINS` | Yes | Allowed frontend origins |
 
 ### Frontend (`frontend/.env.local`)
-| Variable | Description | Default |
-|---|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | URL of backend API | `http://localhost:8000` |
-| `NEXT_PUBLIC_ENABLE_DEMO_TOOLKIT` | Enable floating reviewer drawer | `true` |
 
----
+| Name | Required | Purpose |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_API_BASE_URL` | Yes | Base URL of the backend |
+| `NEXT_PUBLIC_ENABLE_DEMO_TOOLKIT` | Optional | Shows the Reviewer Demo Toolkit |
 
-## 6. Automated Verification Suite
-To execute the automated regression test suite:
-```bash
-cd backend
-.venv/bin/pytest tests/test_core.py -v
-```
-All 10 tests run in under 4 seconds, verifying the rule engine, login security, submission gatekeeper, AI quarantine tray, RBAC waivers, TPA queries, PDF packet generation, and DPDP unmask logging.
-
----
-
-## 7. Cloud Deployment (Render & Vercel)
-
-### Backend Deployment (Render.com)
-1. In Render Dashboard, click **New +** ➔ **Web Service** ➔ Select GitHub repo `Prakhar6947/ClaimGuard`.
-2. Configure settings:
-   - **Root Directory:** `backend`
-   - **Environment:** `Python 3`
-   - **Build Command:** `pip install -r requirements.txt && python -m app.seed`
-   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. Environment Variables:
-   - `JWT_SECRET_KEY`: `<generate-random-secret>`
-   - `GEMINI_API_KEY`: *(Optional, deterministic fallback works out of the box)*
-   - `CORS_ALLOWED_ORIGINS`: `*`
-4. Deploy and copy your live service URL (e.g., `https://claimguard-api.onrender.com`).
-
-### Frontend Deployment (Vercel)
-1. In Vercel Dashboard, click **Add New Project** ➔ Import `Prakhar6947/ClaimGuard`.
-2. Configure settings:
-   - **Root Directory:** `frontend`
-   - **Framework Preset:** `Next.js`
-3. Environment Variables:
-   - `NEXT_PUBLIC_API_BASE_URL`: `https://claimguard-api.onrender.com` (your live backend URL)
-4. Click **Deploy**. The Next.js frontend builds in ~60 seconds.
+The demo passwords and Docker Compose credentials are for local synthetic accounts only. Do not expose them or the development JWT signing key in a deployed environment; supply strong, unique secrets through the deployment platform instead.
